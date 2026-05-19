@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+
+"""
+Verify non-interactive authentication to Azure using:
+- Tenant ID
+- Client ID
+- Client Secret
+
+Requirements:
+    pip install azure-identity requests
+"""
+
+from azure.identity import ClientSecretCredential
+from azure.core.exceptions import ClientAuthenticationError
+import requests
+import sys
+
+# =========================
+# CONFIGURATION
+# =========================
+TENANT_ID = "your-tenant-id"
+CLIENT_ID = "your-client-id"
+CLIENT_SECRET = "your-client-secret"
+
+# Azure management scope
+SCOPE = "https://management.azure.com/.default"
+
+# =========================
+# AUTHENTICATION TEST
+# =========================
+try:
+    credential = ClientSecretCredential(
+        tenant_id=TENANT_ID,
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET
+    )
+
+    # Request access token
+    token = credential.get_token(SCOPE)
+
+    if token and token.token:
+        print("✅ Authentication successful")
+        print(f"Token expires at: {token.expires_on}")
+    else:
+        print("❌ Failed to acquire token")
+        sys.exit(1)
+
+    # Optional: Validate access by calling Azure REST API
+    headers = {
+        "Authorization": f"Bearer {token.token}",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.get(
+        "https://management.azure.com/subscriptions?api-version=2020-01-01",
+        headers=headers
+    )
+
+    if response.status_code == 200:
+        print("✅ Azure API access verified")
+        subscriptions = response.json().get("value", [])
+
+        print(f"Found {len(subscriptions)} subscription(s):")
+
+        for sub in subscriptions:
+            print(f" - {sub['displayName']} ({sub['subscriptionId']})")
+
+        sys.exit(0)
+
+    else:
+        print(f"❌ Azure API validation failed")
+        print(f"HTTP Status: {response.status_code}")
+        print(response.text)
+        sys.exit(1)
+
+except ClientAuthenticationError as auth_error:
+    print("❌ Authentication failed")
+    print(auth_error)
+    sys.exit(1)
+
+except Exception as ex:
+    print("❌ Unexpected error")
+    print(str(ex))
+    sys.exit(1)
